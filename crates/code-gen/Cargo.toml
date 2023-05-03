@@ -10,3 +10,7 @@ genco = "0.17.5"
 miette = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+
+
+[dev-dependencies]
+serde_json = "1.0.96"
