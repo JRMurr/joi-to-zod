@@ -2,6 +2,10 @@ mod joi;
 
 use genco::prelude::*;
 
+pub fn gen_from_file(contents: String) {
+    unimplemented!();
+}
+
 pub fn gen() -> String {
     let react = &js::import("react", "React").into_default();
     let display = &js::import("./Display", "Display").into_default();
