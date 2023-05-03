@@ -1,0 +1,7 @@
+[workspace]
+members = ["crates/*"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# https://doc.rust-lang.org/nightly/cargo/reference/specifying-dependencies.html#inheriting-a-dependency-from-a-workspace
+[workspace.dependencies]
+serde = { version = "1.0.160", features = ["derive"] }
