@@ -11,8 +11,6 @@ miette = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 clap = { version = "4.2.7", features = ["derive"] }
-
-[dev-dependencies]
 serde_json = "1.0.96"
 
 [lib]
