@@ -5,3 +5,8 @@ members = ["crates/*"]
 # https://doc.rust-lang.org/nightly/cargo/reference/specifying-dependencies.html#inheriting-a-dependency-from-a-workspace
 [workspace.dependencies]
 serde = { version = "1.0.160", features = ["derive"] }
+miette = "5.5.0"
+thiserror = "1.0.40"
+
+[profile.release]
+lto = true

@@ -1,9 +1,8 @@
-#![deny(clippy::all)]
+use napi_derive::napi;
 
-#[macro_use]
-extern crate napi_derive;
+use code_gen::gen;
 
 #[napi]
-pub fn sum(a: i32, b: i32) -> i32 {
-  a + b
+pub fn run() -> String {
+  gen()
 }

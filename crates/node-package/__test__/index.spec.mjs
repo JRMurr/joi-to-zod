@@ -1,7 +1,7 @@
-import test from 'ava'
+import test from "ava";
 
-import { sum } from '../index.js'
+import { run } from "../index.js";
 
-test('sum from native', (t) => {
-  t.is(sum(1, 2), 3)
-})
+test("run code gen", (t) => {
+  t.deepEqual(run(), ""); // fails but don't care
+});
