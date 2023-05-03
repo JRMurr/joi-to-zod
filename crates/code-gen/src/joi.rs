@@ -1,4 +1,4 @@
-use std::{collections::HashMap};
+use std::{collections::{HashMap}};
 
 use genco::prelude::js;
 use serde::{self, Deserialize, Serialize};
@@ -38,15 +38,24 @@ pub struct JoiFlag {
     description: Option<String>, 
 }
 
-impl JoiDescribe {
-    pub fn to_tokens(&self) -> Vec<js::Tokens>{
+pub trait Tokenizer<T> {
+    fn to_tokens(&self) -> Option<Vec<T>>;
+}
+
+impl Tokenizer<js::Tokens> for JoiDescribe {
+    fn to_tokens(&self) -> Option<Vec<js::Tokens>> {
         match self {
             Self::Object(collection) => {
                 println!("Type {:?} : {:?}", &self, collection);
+                let keys = collection.keys.clone()?;
+                for (key, value) in keys.into_iter() {
+                   println!("Key: {}, value: {:?}", key, value);
+                }
                 unimplemented!()
             }
             Self::Array(collection) => {
                 println!("Type {:?} : {:?}", &self, collection);
+                let items = collection.items.clone()?
                 unimplemented!()
             },
             Self::Alternatives(collection) => {
@@ -69,10 +78,6 @@ impl JoiDescribe {
                 println!("{:?}", item);
                 unimplemented!()
             },
-            _ => {
-                println!("No matching type for {:?}", self);
-                vec![]
-            }
         }
     }
 }
