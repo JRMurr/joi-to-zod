@@ -10,7 +10,13 @@ genco = "0.17.5"
 miette = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
-
-
-[dev-dependencies]
+clap = { version = "4.2.7", features = ["derive"] }
 serde_json = "1.0.96"
+
+[lib]
+name = "code_gen"
+path = "src/lib.rs"
+
+[[bin]]
+name = "code_gen_cli"
+path = "src/bin/bin.rs"
