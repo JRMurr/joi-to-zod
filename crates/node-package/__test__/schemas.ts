@@ -44,5 +44,6 @@ export const BasicObject = Joi.object({
   propertyName1: Joi.boolean().required(),
   dateCreated: Joi.date(),
   count: Joi.number(),
+  int: Joi.number().integer().optional(),
   obj: Joi.object(),
 });
