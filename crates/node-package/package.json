@@ -44,6 +44,7 @@
     "prepublishOnly": "napi prepublish -t npm",
     "test": "ava --verbose",
     "universal": "napi universal",
-    "version": "napi version"
+    "version": "napi version",
+    "example": "ts-node example/basic"
   }
 }

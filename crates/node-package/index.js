@@ -252,6 +252,6 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { run } = nativeBinding
+const { toZod } = nativeBinding
 
-module.exports.run = run
+module.exports.toZod = toZod
