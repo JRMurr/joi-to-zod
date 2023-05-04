@@ -122,8 +122,22 @@ impl Tokenizer<js::Tokens> for JoiDescribe {
         match self.flags {
             Some(ref flags) => {
                 let flag_tokens = flags.to_tokens();
+
+                let flag_tokens = match flag_tokens.to_string() {
+                    Ok(res) => {
+                        // only append '.' if flag_tokens exists
+                        if !res.is_empty() {
+                            quote! {
+                                .$flag_tokens
+                            }
+                        } else {
+                            quote!{}
+                        }
+                    },
+                    Err(_) => quote!{},
+                };
                 quote! {
-                    $value.$flag_tokens
+                    $value$flag_tokens
                 }
             }
             None => value,
