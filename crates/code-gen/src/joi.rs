@@ -1,7 +1,7 @@
 use genco::prelude::js;
 use genco::prelude::*;
 use serde::{self, Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 // https://github.com/hapijs/joi/blob/7ead57a9f8180895e110f010b425ae411451bd08/lib/index.d.ts#L1316
 // https://github.com/mrjono1/joi-to-typescript/blob/613e42022fb9847ab4c718410dbd980a457503ad/src/joiDescribeTypes.ts#LL10C56-L10C56
@@ -13,7 +13,7 @@ use std::collections::HashMap;
 pub enum JoiDescribeType {
     Object {
         #[serde(default)]
-        keys: HashMap<String, JoiDescribe>,
+        keys: BTreeMap<String, JoiDescribe>,
     },
     Array {
         #[serde(default)]
@@ -72,7 +72,7 @@ impl Tokenizer<js::Tokens> for JoiDescribe {
             JoiDescribeType::Object {
                 keys: ref collection,
             } => {
-                let mut result = HashMap::new();
+                let mut result = BTreeMap::new();
                 for (key, value) in collection.into_iter() {
                     result.insert(key, value.to_tokens());
                 }
@@ -218,7 +218,11 @@ mod tests {
         )
         .unwrap();
 
-        dbg!(joi);
+        let tokens = joi.to_tokens();
+        assert_eq!(
+            tokens.to_string(),
+            Ok("z.object({count: z.number(), dateCreated: z.date(), int: z.number(), name: z.string().describe(\"Test Schema Name\"), obj: z.object({}), propertyName1: z.boolean()})".to_string())
+        )
     }
 
     #[test]
