@@ -72,11 +72,13 @@ impl Tokenizer<js::Tokens> for JoiDescribe {
             JoiDescribeType::Object {
                 keys: ref collection,
             } => {
-                println!("Type {:?} : {:?}", &self, collection);
+                let mut result = HashMap::new();
                 for (key, value) in collection.into_iter() {
-                    println!("Key: {}, value: {:?}", key, value);
+                    result.insert(key, value.to_tokens());
                 }
-                unimplemented!()
+                quote! {
+                    z.object({$(for (key, value) in result join (, )=> $key: $value)})
+                }
             }
             JoiDescribeType::Array { ref items } => {
                 let mut children = items.iter().map(|child| child.to_tokens());
