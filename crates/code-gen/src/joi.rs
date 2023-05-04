@@ -12,13 +12,16 @@ use std::collections::HashMap;
 #[serde(tag = "type")]
 pub enum JoiDescribeType {
     Object {
-        keys: Option<HashMap<String, JoiDescribe>>,
+        #[serde(default)]
+        keys: HashMap<String, JoiDescribe>,
     },
     Array {
-        items: Option<Vec<JoiDescribe>>,
+        #[serde(default)]
+        items: Vec<JoiDescribe>,
     },
     Alternatives {
-        matches: Option<Vec<HashMap<String, String>>>,
+        #[serde(default)]
+        matches: Vec<HashMap<String, String>>,
     },
     Date,
     Number,
@@ -70,16 +73,24 @@ impl Tokenizer<js::Tokens> for JoiDescribe {
                 keys: ref collection,
             } => {
                 println!("Type {:?} : {:?}", &self, collection);
-                if let Some(children) = collection {
-                    for (key, value) in children.into_iter() {
-                        println!("Key: {}, value: {:?}", key, value);
-                    }
+                for (key, value) in collection.into_iter() {
+                    println!("Key: {}, value: {:?}", key, value);
                 }
                 unimplemented!()
             }
             JoiDescribeType::Array { ref items } => {
-                println!("Type {:?} : {:?}", &self, items);
-                unimplemented!()
+                let mut children = items.iter().map(|child| child.to_tokens());
+                let element = if children.len() > 1 {
+                    // not sure how common multiple array items is but i guess we wrap in union?
+                    quote! {
+                        z.union([$(for child in children join (, )=> $child)])
+                    }
+                } else {
+                    children.next().unwrap()
+                };
+                quote! {
+                    z.array($element)
+                }
             }
             JoiDescribeType::Alternatives { ref matches } => {
                 println!("Type {:?} : {:?}", &self, matches);
@@ -219,6 +230,10 @@ mod tests {
         )
         .unwrap();
 
-        dbg!(joi);
+        let tokens = dbg!(joi).to_tokens();
+        assert_eq!(
+            tokens.to_string(),
+            Ok("z.array(z.string()).describe(\"A list of Test object\")".to_string())
+        )
     }
 }
