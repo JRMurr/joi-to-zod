@@ -14,7 +14,7 @@ pub enum CodeGenError {
 }
 
 pub fn gen(describe: String) -> Result<String, CodeGenError> {
-    let joi_str: JoiDescribe = serde_json::from_str(describe.as_str())?;
+    let joi_str: JoiDescribe = serde_json::from_str(dbg!(describe).as_str())?;
 
     Ok(joi_str.convert()?)
 }
