@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 
 pub trait Tokenizer {
     fn to_tokens(&self) -> js::Tokens;
+    fn to_multiple_tokens(&self) -> Vec<js::Tokens>;
 }
 
 /// The type specific joi describe options
@@ -70,6 +71,10 @@ impl Default for JoiFlag {
 
 impl Tokenizer for JoiFlag {
     fn to_tokens(&self) -> js::Tokens {
+        unimplemented!()
+    }
+
+    fn to_multiple_tokens(&self) -> Vec<js::Tokens> {
         let description: js::Tokens = self
             .description
             .as_ref()
@@ -80,8 +85,46 @@ impl Tokenizer for JoiFlag {
             })
             .unwrap_or_default();
 
-        // TODO: prescenc
-        description
+        let presence: js::Tokens = self
+            .presence
+            .as_ref()
+            .map(|pres| {
+                let str = match pres.as_str() {
+                    "optional" => quote! {
+                        optional()
+                    },
+                    "required" => quote! {
+                        required()
+                    },
+                    "forbidden" => quote! {
+                        undefined()
+                    },
+                    _ => unreachable!(),
+                };
+                str
+            })
+            .unwrap_or_default();
+
+        // description
+        let mut flag_tokens = Vec::new();
+        if !description.is_empty() {
+            flag_tokens.push(description);
+        }
+        
+        // presence
+        // in joi - everything is optional, in zod - everything is required
+        // so gotta add .optional() to everything that does not have a presence 
+        // and ignore .required() presences
+        if &presence.to_string().unwrap_or_default() == "required()" {
+            // no op
+        } else if !presence.is_empty() {
+            flag_tokens.push(presence);
+        } else {
+            flag_tokens.push(quote! {
+                optional()
+            });
+        }
+        flag_tokens
     }
 }
 
@@ -146,16 +189,26 @@ impl Tokenizer for JoiDescribe {
             }
         };
 
-        let flag_tokens = self.flags.to_tokens().to_string().unwrap_or_default();
+        let flag_tokens = self
+            .flags
+            .to_multiple_tokens()
+            .iter()
+            .map(|item| item.to_string().unwrap_or_default())
+            .collect::<Vec<String>>();
 
         // only append '.' if flag_tokens exists
-        if !flag_tokens.is_empty() {
+        if flag_tokens.len() > 0 {
+            let flag_vals = flag_tokens.join(".");
             quote! {
-                $value.$flag_tokens
+                $value.$flag_vals
             }
         } else {
             value
         }
+    }
+
+    fn to_multiple_tokens(&self) -> Vec<js::Tokens> {
+        unimplemented!()
     }
 }
 
@@ -183,7 +236,7 @@ mod tests {
 
         assert_eq!(
             tokens.to_string(),
-            Ok("z.number().describe(\"some description\")".to_string())
+            Ok("z.number().describe(\"some description\").optional()".to_string())
         )
     }
 
@@ -208,10 +261,16 @@ mod tests {
                     }
                 },
                 "dateCreated": {
-                    "type": "date"
+                    "type": "date",
+                    "flags": {
+                        "presence": "required"
+                    }
                 },
                 "count": {
-                    "type": "number"
+                    "type": "number",
+                    "flags": {
+                        "presence": "required"
+                    }
                 },
                 "int": {
                     "type": "number",
@@ -226,6 +285,12 @@ mod tests {
                 },
                 "obj": {
                     "type": "object"
+                },
+                "yuck": {
+                    "type": "string",
+                    "flags": {
+                        "presence": "forbidden"
+                    }
                 }
             }
         }
@@ -236,7 +301,7 @@ mod tests {
         let tokens = joi.to_tokens();
         assert_eq!(
             tokens.to_string(),
-            Ok("z.object({count: z.number(), dateCreated: z.date(), int: z.number(), name: z.string().describe(\"Test Schema Name\"), obj: z.object({}), propertyName1: z.boolean()})".to_string())
+            Ok("z.object({count: z.number(), dateCreated: z.date(), int: z.number().optional(), name: z.string().describe(\"Test Schema Name\").optional(), obj: z.object({}).optional(), propertyName1: z.boolean(), yuck: z.string().undefined()}).optional()".to_string())
         )
     }
 
@@ -247,7 +312,7 @@ mod tests {
             {
                 "type": "array",
                 "flags": {
-                  "presence": "required",
+                  "presence": "optional",
                   "description": "A list of Test object"
                 },
                 "metas": [
@@ -257,7 +322,10 @@ mod tests {
                 ],
                 "items": [
                   {
-                    "type": "string"
+                    "type": "string",
+                    "flags": {
+                        "presence": "required"
+                    }
                   }
                 ]
               }
@@ -268,7 +336,7 @@ mod tests {
         let tokens = joi.to_tokens();
         assert_eq!(
             tokens.to_string(),
-            Ok("z.array(z.string()).describe(\"A list of Test object\")".to_string())
+            Ok("z.array(z.string()).describe(\"A list of Test object\").optional()".to_string())
         )
     }
 
@@ -278,6 +346,7 @@ mod tests {
             r#"{
             "type": "string",
             "flags": {
+                "presence": "required",
                 "only": true
             },
             "allow": [
@@ -301,6 +370,7 @@ mod tests {
             r#"{
             "type": "string",
             "flags": {
+                "presence": "required",
                 "only": true
             },
             "allow": [
@@ -320,6 +390,7 @@ mod tests {
             r#"{
             "type": "number",
             "flags": {
+                "presence": "required",
                 "only": true
             },
             "allow": [
