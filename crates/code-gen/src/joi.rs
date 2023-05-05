@@ -8,12 +8,12 @@ use std::collections::{BTreeMap, HashMap};
 
 pub trait Tokenizer {
     fn to_tokens(&self) -> js::Tokens;
-    fn to_multiple_tokens(&self) -> Vec<js::Tokens>;
 }
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AltSchema {
-    schema: JoiDescribe
+    schema: JoiDescribe,
 }
 
 /// The type specific joi describe options
@@ -76,10 +76,6 @@ impl Default for JoiFlag {
 
 impl Tokenizer for JoiFlag {
     fn to_tokens(&self) -> js::Tokens {
-        unimplemented!()
-    }
-
-    fn to_multiple_tokens(&self) -> Vec<js::Tokens> {
         let description: js::Tokens = self
             .description
             .as_ref()
@@ -115,10 +111,10 @@ impl Tokenizer for JoiFlag {
         if !description.is_empty() {
             flag_tokens.push(description);
         }
-        
+
         // presence
         // in joi - everything is optional, in zod - everything is required
-        // so gotta add .optional() to everything that does not have a presence 
+        // so gotta add .optional() to everything that does not have a presence
         // and ignore .required() presences
         if &presence.to_string().unwrap_or_default() == "required()" {
             // no op
@@ -129,7 +125,10 @@ impl Tokenizer for JoiFlag {
                 optional()
             });
         }
-        flag_tokens
+
+        quote! {
+            $(for flag in flag_tokens.iter() join (. )=> $flag)
+        }
     }
 }
 
@@ -195,26 +194,16 @@ impl Tokenizer for JoiDescribe {
             }
         };
 
-        let flag_tokens = self
-            .flags
-            .to_multiple_tokens()
-            .iter()
-            .map(|item| item.to_string().unwrap_or_default())
-            .collect::<Vec<String>>();
+        let flag_tokens = self.flags.to_tokens();
 
         // only append '.' if flag_tokens exists
-        if flag_tokens.len() > 0 {
-            let flag_vals = flag_tokens.join(".");
-            quote! {
-                $value.$flag_vals
-            }
-        } else {
+        if flag_tokens.is_empty() {
             value
+        } else {
+            quote! {
+                $value.$flag_tokens
+            }
         }
-    }
-
-    fn to_multiple_tokens(&self) -> Vec<js::Tokens> {
-        unimplemented!()
     }
 }
 
@@ -417,7 +406,7 @@ mod tests {
     #[test]
     fn test_convert_simple_alternative() {
         let joi: JoiDescribe = serde_json::from_str(
-        r#"
+            r#"
         {
             "type":"alternatives",
             "matches":[
@@ -434,15 +423,13 @@ mod tests {
             ]
         }
         "#,
-    )
-    .unwrap();
+        )
+        .unwrap();
 
-    let tokens = dbg!(joi).to_tokens();
-    assert_eq!(
-        tokens.to_string(),
-        Ok("z.union([z.number(), z.string()])".to_string())
-    )
-
-
+        let tokens = dbg!(joi).to_tokens();
+        assert_eq!(
+            tokens.to_string(),
+            Ok("z.union([z.number(), z.string()])".to_string())
+        )
     }
 }
