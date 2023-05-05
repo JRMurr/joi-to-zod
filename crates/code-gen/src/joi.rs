@@ -147,24 +147,43 @@ impl Tokenizer for JoiFlag {
 
 impl Tokenizer for JoiDescribe {
     fn to_tokens(&self, default_optional: bool) -> js::Tokens {
-        fn handle_string_allow(allow: &Vec<serde_json::value::Value>) -> js::Tokens {
-            let (nulls, non_nulls): (Vec<_>, Vec<_>) = allow.iter().partition(|val| val.is_null());
+        // a pre process function to apply to the schema
+        // https://zod.dev/?id=preprocess
+        let mut pre_process: Option<js::Tokens> = None;
 
-            let mut non_nulls = non_nulls.iter().map(|elem| format!("{}", elem));
-            let zod_schema = if allow.len() > 1 {
+        let mut handle_string_allow = |allow: &Vec<serde_json::value::Value>| -> js::Tokens {
+            let (nulls, non_nulls): (Vec<_>, Vec<_>) = allow.iter().partition(|val| val.is_null());
+            let (empty_str, non_empty): (Vec<_>, Vec<_>) = non_nulls
+                .iter()
+                .copied()
+                .partition(|val| val.as_str().map(|s| s.is_empty()).unwrap_or(false));
+
+            let mut non_nulls = non_empty.iter().map(|elem| format!("{}", elem));
+            let zod_schema = if non_nulls.len() > 1 {
                 quote! { z.enum([$(for elem in non_nulls join (, )=> $[str]($[const](elem)))]) }
             } else if let Some(literal) = non_nulls.next() {
                 quote! { z.literal($[str]($[const](literal))) }
             } else {
-                unreachable!()
+                quote! { z.string() }
             };
+
+            if !empty_str.is_empty() {
+                pre_process = Some(quote! {
+                    (val) => {
+                        if (val === "") {
+                            return null;
+                        }
+                        return val;
+                    }
+                })
+            }
 
             if nulls.is_empty() {
                 zod_schema
             } else {
                 quote! {$zod_schema.nullable()}
             }
-        }
+        };
 
         let value: js::Tokens = match self.type_options {
             JoiDescribeType::Object {
@@ -220,12 +239,17 @@ impl Tokenizer for JoiDescribe {
         let flag_tokens = self.flags.to_tokens(default_optional);
 
         // only append '.' if flag_tokens exists
-        if flag_tokens.is_empty() {
+        let schema = if flag_tokens.is_empty() {
             value
         } else {
             quote! {
                 $value.$flag_tokens
             }
+        };
+
+        match pre_process {
+            Some(pre) => quote!(z.preprocess($pre, $schema)),
+            None => schema,
         }
     }
 }
@@ -467,6 +491,18 @@ mod tests {
         assert_eq!(
             tokens,
             Ok("z.union([z.number(), z.string()]).optional()".to_string())
+        )
+    }
+
+    #[test]
+    fn test_convert_nullable_string() {
+        let joi: JoiDescribe =
+            serde_json::from_str("{\"type\":\"nullableString\",\"allow\":[null,\"\"]}").unwrap();
+
+        let tokens = joi.convert();
+        assert_eq!(
+            tokens,
+            Ok("z.preprocess((val) => {\n    if (val === \"\") {\n        return null;\n    }\n    return val;\n}, z.string().nullable().optional())".to_string())
         )
     }
 }
