@@ -43,6 +43,7 @@ pub enum JoiDescribeType {
         allow: Vec<String>,
     },
     Boolean,
+    Any
 }
 
 /// Representation of the `.describe()` response on a joi object
@@ -199,6 +200,9 @@ impl Tokenizer for JoiDescribe {
             JoiDescribeType::Boolean => {
                 quote! { z.boolean() }
             }
+            JoiDescribeType::Any => {
+                quote! { z.any() }
+            }
         };
 
         let flag_tokens = self.flags.to_tokens(default_optional);
@@ -218,6 +222,24 @@ impl Tokenizer for JoiDescribe {
 mod tests {
 
     use super::JoiDescribe;
+
+    #[test]
+    fn test_convert_simple_any() {
+        let describe = r#"{
+            "type":"any",
+            "flags":{
+                "description":"some description"
+            }
+        }"#;
+
+        let joi: JoiDescribe = serde_json::from_str(describe).expect("should work...");
+        let tokens = joi.convert();
+
+        assert_eq!(
+            tokens,
+            Ok("z.any().describe(\"some description\").optional()".to_string())
+        )
+    }
 
     #[test]
     fn test_convert_single_number() {
