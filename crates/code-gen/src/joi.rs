@@ -52,7 +52,7 @@ pub struct JoiDescribe {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JoiFlag {
-    presense: Option<String>,
+    presence: Option<String>,
     description: Option<String>,
     #[serde(default)]
     only: bool, // default to false
@@ -61,7 +61,7 @@ pub struct JoiFlag {
 impl Default for JoiFlag {
     fn default() -> Self {
         Self {
-            presense: None,
+            presence: None,
             description: None,
             only: false,
         }
