@@ -2,7 +2,7 @@ mod joi;
 
 use thiserror::Error;
 
-use crate::joi::{JoiDescribe, Tokenizer};
+use crate::joi::JoiDescribe;
 
 #[derive(Error, Debug)]
 pub enum CodeGenError {
@@ -13,13 +13,8 @@ pub enum CodeGenError {
     FormatError(#[from] std::fmt::Error),
 }
 
-pub fn gen_from_file(contents: String) {
-    let joi_str: JoiDescribe = serde_json::from_str(contents.as_str()).expect("Something");
-    joi_str.to_tokens();
-}
-
 pub fn gen(describe: String) -> Result<String, CodeGenError> {
     let joi_str: JoiDescribe = serde_json::from_str(describe.as_str())?;
 
-    Ok(joi_str.to_tokens().to_string()?)
+    Ok(joi_str.convert()?)
 }

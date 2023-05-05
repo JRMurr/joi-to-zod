@@ -1,9 +1,8 @@
 use clap::{CommandFactory, Parser};
-use std::path::{Path, PathBuf};
+use miette::{IntoDiagnostic, Result};
 use std::fs::File;
-use code_gen::gen_from_file;
 use std::io::prelude::*;
-
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -12,15 +11,14 @@ struct Cli {
     file: Option<PathBuf>,
 }
 
-fn run_codegen(file_path: &Path) -> std::io::Result<()> {
-    let mut file = File::open(file_path)?;
+fn run_codegen(file_path: &Path) -> Result<String> {
+    let mut file = File::open(file_path).into_diagnostic()?;
     let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    gen_from_file(contents);
-    Ok(())
+    file.read_to_string(&mut contents).into_diagnostic()?;
+    code_gen::gen(contents).into_diagnostic()
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let file_path = cli.file.as_deref().unwrap_or_else(|| {
@@ -32,6 +30,6 @@ fn main() -> std::io::Result<()> {
             .exit();
     });
 
-    run_codegen(file_path)
-
+    run_codegen(file_path)?;
+    Ok(())
 }

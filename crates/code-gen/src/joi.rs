@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 // https://github.com/mrjono1/joi-to-typescript/blob/613e42022fb9847ab4c718410dbd980a457503ad/src/joiDescribeTypes.ts#LL10C56-L10C56
 
 pub trait Tokenizer {
-    fn to_tokens(&self) -> js::Tokens;
+    fn to_tokens(&self, default_presence: bool) -> js::Tokens;
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -56,6 +56,12 @@ pub struct JoiDescribe {
     metas: Option<Vec<HashMap<String, String>>>,
 }
 
+impl JoiDescribe {
+    pub fn convert(&self) -> genco::fmt::Result<String> {
+        self.to_tokens(true).to_string()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JoiFlag {
     presence: Option<String>,
@@ -75,7 +81,7 @@ impl Default for JoiFlag {
 }
 
 impl Tokenizer for JoiFlag {
-    fn to_tokens(&self) -> js::Tokens {
+    fn to_tokens(&self, default_optional: bool) -> js::Tokens {
         let description: js::Tokens = self
             .description
             .as_ref()
@@ -86,25 +92,25 @@ impl Tokenizer for JoiFlag {
             })
             .unwrap_or_default();
 
-        let presence: js::Tokens = self
+        let presence = self
             .presence
             .as_ref()
             .map(|pres| {
                 let str = match pres.as_str() {
-                    "optional" => quote! {
-                        optional()
-                    },
-                    "required" => quote! {
-                        required()
-                    },
-                    "forbidden" => quote! {
-                        undefined()
-                    },
+                    "optional" => quote! { optional() },
+                    "required" => quote! { required() },
+                    "forbidden" => quote! { undefined() },
                     _ => unreachable!(),
                 };
                 str
             })
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                if default_optional {
+                    quote! {optional()}
+                } else {
+                    quote! {required()}
+                }
+            });
 
         // description
         let mut flag_tokens = Vec::new();
@@ -113,9 +119,10 @@ impl Tokenizer for JoiFlag {
         }
 
         // presence
-        // in joi - everything is optional, in zod - everything is required
+        // in joi - everything is optional at the root/in objects, in zod - everything is required
         // so gotta add .optional() to everything that does not have a presence
         // and ignore .required() presences
+
         if &presence.to_string().unwrap_or_default() == "required()" {
             // no op
         } else if !presence.is_empty() {
@@ -127,26 +134,26 @@ impl Tokenizer for JoiFlag {
         }
 
         quote! {
-            $(for flag in flag_tokens.iter() join (. )=> $flag)
+            $(for flag in flag_tokens.iter() join (.)=> $flag)
         }
     }
 }
 
 impl Tokenizer for JoiDescribe {
-    fn to_tokens(&self) -> js::Tokens {
+    fn to_tokens(&self, default_optional: bool) -> js::Tokens {
         let value: js::Tokens = match self.type_options {
             JoiDescribeType::Object {
                 keys: ref collection,
             } => {
                 let result = collection
                     .into_iter()
-                    .map(|(key, value)| (key, value.to_tokens()));
+                    .map(|(key, value)| (key, value.to_tokens(true)));
                 quote! {
                     z.object({$(for (key, value) in result join (, )=> $key: $value)})
                 }
             }
             JoiDescribeType::Array { ref items } => {
-                let mut children = items.iter().map(|child| child.to_tokens());
+                let mut children = items.iter().map(|child| child.to_tokens(false));
                 let element = if children.len() > 1 {
                     // not sure how common multiple array items is but i guess we wrap in union?
                     quote! {
@@ -159,7 +166,7 @@ impl Tokenizer for JoiDescribe {
             }
             JoiDescribeType::Alternatives { ref matches } => {
                 quote! {
-                    z.union([$(for one_match in matches.iter() join (, )=> $(one_match.schema.to_tokens()))])
+                    z.union([$(for one_match in matches.iter() join (, )=> $(one_match.schema.to_tokens(false)))])
                 }
             }
             JoiDescribeType::String { ref allow } => {
@@ -194,7 +201,7 @@ impl Tokenizer for JoiDescribe {
             }
         };
 
-        let flag_tokens = self.flags.to_tokens();
+        let flag_tokens = self.flags.to_tokens(default_optional);
 
         // only append '.' if flag_tokens exists
         if flag_tokens.is_empty() {
@@ -210,7 +217,7 @@ impl Tokenizer for JoiDescribe {
 #[cfg(test)]
 mod tests {
 
-    use super::{JoiDescribe, Tokenizer};
+    use super::JoiDescribe;
 
     #[test]
     fn test_convert_single_number() {
@@ -227,10 +234,10 @@ mod tests {
         }"#;
 
         let joi: JoiDescribe = serde_json::from_str(describe).expect("should work...");
-        let tokens = joi.to_tokens();
+        let tokens = joi.convert();
 
         assert_eq!(
-            tokens.to_string(),
+            tokens,
             Ok("z.number().describe(\"some description\").optional()".to_string())
         )
     }
@@ -293,9 +300,9 @@ mod tests {
         )
         .unwrap();
 
-        let tokens = joi.to_tokens();
+        let tokens = joi.convert();
         assert_eq!(
-            tokens.to_string(),
+            tokens,
             Ok("z.object({count: z.number(), dateCreated: z.date(), int: z.number().optional(), name: z.string().describe(\"Test Schema Name\").optional(), obj: z.object({}).optional(), propertyName1: z.boolean(), yuck: z.string().undefined()}).optional()".to_string())
         )
     }
@@ -307,7 +314,6 @@ mod tests {
             {
                 "type": "array",
                 "flags": {
-                  "presence": "optional",
                   "description": "A list of Test object"
                 },
                 "metas": [
@@ -328,9 +334,9 @@ mod tests {
         )
         .unwrap();
 
-        let tokens = joi.to_tokens();
+        let tokens = joi.convert();
         assert_eq!(
-            tokens.to_string(),
+            tokens,
             Ok("z.array(z.string()).describe(\"A list of Test object\").optional()".to_string())
         )
     }
@@ -352,11 +358,8 @@ mod tests {
         )
         .unwrap();
 
-        let tokens = joi.to_tokens();
-        assert_eq!(
-            tokens.to_string(),
-            Ok("z.enum([\"foo\", \"bar\"])".to_string())
-        )
+        let tokens = joi.convert();
+        assert_eq!(tokens, Ok("z.enum([\"foo\", \"bar\"])".to_string()))
     }
 
     #[test]
@@ -375,8 +378,8 @@ mod tests {
         )
         .unwrap();
 
-        let tokens = joi.to_tokens();
-        assert_eq!(tokens.to_string(), Ok("z.literal(\"foo\")".to_string()))
+        let tokens = joi.convert();
+        assert_eq!(tokens, Ok("z.literal(\"foo\")".to_string()))
     }
 
     #[test]
@@ -396,9 +399,9 @@ mod tests {
         )
         .unwrap();
 
-        let tokens = joi.to_tokens();
+        let tokens = joi.convert();
         assert_eq!(
-            tokens.to_string(),
+            tokens,
             Ok("z.union([z.literal(3), z.literal(4)])".to_string())
         )
     }
@@ -426,10 +429,10 @@ mod tests {
         )
         .unwrap();
 
-        let tokens = dbg!(joi).to_tokens();
+        let tokens = joi.convert();
         assert_eq!(
-            tokens.to_string(),
-            Ok("z.union([z.number(), z.string()])".to_string())
+            tokens,
+            Ok("z.union([z.number(), z.string()]).optional()".to_string())
         )
     }
 }
