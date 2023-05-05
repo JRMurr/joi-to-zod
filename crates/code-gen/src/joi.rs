@@ -40,10 +40,15 @@ pub enum JoiDescribeType {
     },
     String {
         #[serde(default)]
-        allow: Vec<String>,
+        allow: Vec<serde_json::value::Value>,
     },
     Boolean,
-    Any
+    Any,
+    // Custom Variants
+    NullableString {
+        #[serde(default)]
+        allow: Vec<serde_json::value::Value>,
+    },
 }
 
 /// Representation of the `.describe()` response on a joi object
@@ -142,6 +147,25 @@ impl Tokenizer for JoiFlag {
 
 impl Tokenizer for JoiDescribe {
     fn to_tokens(&self, default_optional: bool) -> js::Tokens {
+        fn handle_string_allow(allow: &Vec<serde_json::value::Value>) -> js::Tokens {
+            let (nulls, non_nulls): (Vec<_>, Vec<_>) = allow.iter().partition(|val| val.is_null());
+
+            let mut non_nulls = non_nulls.iter().map(|elem| format!("{}", elem));
+            let zod_schema = if allow.len() > 1 {
+                quote! { z.enum([$(for elem in non_nulls join (, )=> $[str]($[const](elem)))]) }
+            } else if let Some(literal) = non_nulls.next() {
+                quote! { z.literal($[str]($[const](literal))) }
+            } else {
+                unreachable!()
+            };
+
+            if nulls.is_empty() {
+                zod_schema
+            } else {
+                quote! {$zod_schema.nullable()}
+            }
+        }
+
         let value: js::Tokens = match self.type_options {
             JoiDescribeType::Object {
                 keys: ref collection,
@@ -165,27 +189,17 @@ impl Tokenizer for JoiDescribe {
                 };
                 quote! { z.array($element) }
             }
-            JoiDescribeType::Alternatives { ref matches } => {
-                quote! {
-                    z.union([$(for one_match in matches.iter() join (, )=> $(one_match.schema.to_tokens(false)))])
-                }
-            }
+            JoiDescribeType::Alternatives { ref matches } => quote! {
+                z.union([$(for one_match in matches.iter() join (, )=> $(one_match.schema.to_tokens(false)))])
+            },
             JoiDescribeType::String { ref allow } => {
                 if !self.flags.only {
                     quote! { z.string() }
                 } else {
-                    if allow.len() > 1 {
-                        quote! { z.enum([$(for elem in allow join (, )=> $[str]($[const](elem)))]) }
-                    } else if let Some(literal) = allow.get(0) {
-                        quote! { z.literal($[str]($[const](literal))) }
-                    } else {
-                        unreachable!()
-                    }
+                    handle_string_allow(allow)
                 }
             }
-            JoiDescribeType::Date => {
-                quote! { z.date() }
-            }
+            JoiDescribeType::Date => quote! { z.date() },
             JoiDescribeType::Number { ref allow } => {
                 if !self.flags.only {
                     quote! { z.number() }
@@ -197,12 +211,10 @@ impl Tokenizer for JoiDescribe {
                     quote! { z.union([$(for elem in elems join (, )=> z.literal($elem))]) }
                 }
             }
-            JoiDescribeType::Boolean => {
-                quote! { z.boolean() }
-            }
-            JoiDescribeType::Any => {
-                quote! { z.any() }
-            }
+            JoiDescribeType::Boolean => quote! { z.boolean() },
+
+            JoiDescribeType::Any => quote! { z.any() },
+            JoiDescribeType::NullableString { ref allow } => handle_string_allow(allow),
         };
 
         let flag_tokens = self.flags.to_tokens(default_optional);
