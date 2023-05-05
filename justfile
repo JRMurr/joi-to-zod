@@ -7,3 +7,6 @@ doc:
 
 test-node:
     cd crates/node-package && npm run build && npm run test
+
+run-example:
+    cd crates/node-package && npm run build && npm run example

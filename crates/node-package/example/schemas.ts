@@ -47,3 +47,9 @@ export const BasicObject = Joi.object({
   int: Joi.number().integer().optional(),
   obj: Joi.object(),
 });
+
+export const StringWithValid = Joi.string().valid("foo", "bar");
+
+export const NumberWithValid = Joi.number().valid(3, 4);
+
+export const StringWithInValid = Joi.string().invalid("bar", "quz");
