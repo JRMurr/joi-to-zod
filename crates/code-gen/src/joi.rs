@@ -10,6 +10,11 @@ pub trait Tokenizer {
     fn to_tokens(&self) -> js::Tokens;
     fn to_multiple_tokens(&self) -> Vec<js::Tokens>;
 }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AltSchema {
+    schema: JoiDescribe
+}
 
 /// The type specific joi describe options
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -26,7 +31,7 @@ pub enum JoiDescribeType {
     },
     Alternatives {
         #[serde(default)]
-        matches: Vec<HashMap<String, String>>,
+        matches: Vec<AltSchema>,
     },
     Date,
     Number {
@@ -154,8 +159,9 @@ impl Tokenizer for JoiDescribe {
                 quote! { z.array($element) }
             }
             JoiDescribeType::Alternatives { ref matches } => {
-                println!("Type {:?} : {:?}", &self, matches);
-                unimplemented!()
+                quote! {
+                    z.union([$(for one_match in matches.iter() join (, )=> $(one_match.schema.to_tokens()))])
+                }
             }
             JoiDescribeType::String { ref allow } => {
                 if !self.flags.only {
@@ -406,5 +412,37 @@ mod tests {
             tokens.to_string(),
             Ok("z.union([z.literal(3), z.literal(4)])".to_string())
         )
+    }
+
+    #[test]
+    fn test_convert_simple_alternative() {
+        let joi: JoiDescribe = serde_json::from_str(
+        r#"
+        {
+            "type":"alternatives",
+            "matches":[
+                {
+                    "schema":{
+                        "type":"number"
+                    }
+                },
+                {
+                    "schema":{
+                        "type":"string"
+                    }
+                }
+            ]
+        }
+        "#,
+    )
+    .unwrap();
+
+    let tokens = dbg!(joi).to_tokens();
+    assert_eq!(
+        tokens.to_string(),
+        Ok("z.union([z.number(), z.string()])".to_string())
+    )
+
+
     }
 }
