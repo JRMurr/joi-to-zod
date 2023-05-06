@@ -254,10 +254,22 @@ impl Tokenizer for JoiDescribe {
             JoiDescribeType::Boolean(_) => quote! { z.boolean() },
 
             JoiDescribeType::Any(_) => quote! { z.any() },
-            JoiDescribeType::Unknown(unknown) => {
-                let ty = &dbg!(unknown).joi_type;
-                quote! { z.$ty.__please_fix_me__() }
-            } // JoiDescribeType::NullableString { ref allow } => handle_string_allow(allow),
+            JoiDescribeType::Unknown(joi_unknown) => {
+                let ty = &dbg!(joi_unknown).joi_type;
+                match ty.as_str() {
+                    "nullableString" => {
+                        // TODO: handle this gracefully but for now assuming the structure is like a string
+                        let allows = joi_unknown
+                            .unknown_fields
+                            .get("allow")
+                            .unwrap()
+                            .as_array()
+                            .unwrap();
+                        handle_string_allow(allows)
+                    }
+                    _ => quote! { z.$ty.__please_fix_me__() },
+                }
+            }
         };
 
         let mut extra_flags: Vec<js::Tokens> = Vec::new();
@@ -589,6 +601,17 @@ z.object({
         assert_eq!(
             tokens,
             Ok("z.preprocess((val) => {\n    if (val === \"\") {\n        return null;\n    }\n    return val;\n}, z.string().nullable().optional())".to_string())
+        )
+    }
+
+    #[test]
+    fn test_convert_unknown() {
+        let joi: JoiDescribe = serde_json::from_str("{\"type\":\"someThingUnknown\"}").unwrap();
+
+        let tokens = joi.convert();
+        assert_eq!(
+            tokens,
+            Ok("z.someThingUnknown.__please_fix_me__().optional()".to_string())
         )
     }
 }
