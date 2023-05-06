@@ -59,6 +59,8 @@ pub struct JoiDescribe {
     type_options: JoiDescribeType,
     #[serde(default)]
     flags: JoiFlag,
+    #[serde(default)]
+    rules: Vec<JoiRule>,
     metas: Option<Vec<HashMap<String, String>>>,
 }
 
@@ -68,12 +70,27 @@ impl JoiDescribe {
     }
 }
 
+/// Joi refinement rules
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JoiRule {
+    /// The rule
+    name: String,
+    /// Optional args for the rule (like min or max value)
+    args: Option<serde_json::value::Value>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JoiFlag {
+    /// required | optional | forbidden
     presence: Option<String>,
     description: Option<String>,
+    /// If should only allow values in the allow list
     #[serde(default)]
     only: bool, // default to false
+    /// If an array can parse a single element not in an array
+    #[serde(default)]
+    single: bool, // default to false
 }
 
 impl Default for JoiFlag {
@@ -82,6 +99,7 @@ impl Default for JoiFlag {
             presence: None,
             description: None,
             only: false,
+            single: false,
         }
     }
 }
@@ -145,18 +163,45 @@ impl Tokenizer for JoiFlag {
     }
 }
 
+fn join_tokens_with_dot(start: js::Tokens, extra: js::Tokens) -> js::Tokens {
+    // only append '.' if extra exists
+    if extra.is_empty() {
+        start
+    } else {
+        quote! {
+            $start.$extra
+        }
+    }
+}
+
 impl Tokenizer for JoiDescribe {
     fn to_tokens(&self, default_optional: bool) -> js::Tokens {
         // a pre process function to apply to the schema
         // https://zod.dev/?id=preprocess
         let mut pre_process: Option<js::Tokens> = None;
+        // a refine function to apply to the schema
+        // https://zod.dev/?id=refine
+        // TODO: maybe make this a list and make a super refine func?
+        let mut refine: Option<js::Tokens> = None;
 
         let mut handle_string_allow = |allow: &Vec<serde_json::value::Value>| -> js::Tokens {
-            let (nulls, non_nulls): (Vec<_>, Vec<_>) = allow.iter().partition(|val| val.is_null());
-            let (empty_str, non_empty): (Vec<_>, Vec<_>) = non_nulls
-                .iter()
-                .copied()
-                .partition(|val| val.as_str().map(|s| s.is_empty()).unwrap_or(false));
+            let mut has_null = false;
+            let mut empty_str = false;
+            let mut non_empty = Vec::with_capacity(allow.len());
+
+            for value in allow.iter() {
+                if value.is_null() {
+                    has_null = true;
+                } else if value.as_str().map(|s| s.is_empty()).unwrap_or(false) {
+                    empty_str = true;
+                } else {
+                    non_empty.push(
+                        value
+                            .as_str()
+                            .expect("Passed non string value to allow list of string schema"),
+                    )
+                }
+            }
 
             let mut non_nulls = non_empty.iter().map(|elem| format!("{}", elem));
             let zod_schema = if non_nulls.len() > 1 {
@@ -167,7 +212,8 @@ impl Tokenizer for JoiDescribe {
                 quote! { z.string() }
             };
 
-            if !empty_str.is_empty() {
+            // turn empty str into null
+            if empty_str {
                 pre_process = Some(quote! {
                     (val) => {
                         if (val === "") {
@@ -178,10 +224,11 @@ impl Tokenizer for JoiDescribe {
                 })
             }
 
-            if nulls.is_empty() {
-                zod_schema
-            } else {
+            // if null was allowed make the schema nullable
+            if has_null {
                 quote! {$zod_schema.nullable()}
+            } else {
+                zod_schema
             }
         };
 
@@ -193,16 +240,26 @@ impl Tokenizer for JoiDescribe {
                     .into_iter()
                     .map(|(key, value)| (key, value.to_tokens(true)));
                 quote! {
-                    z.object({$(for (key, value) in result join (, )=> $key: $value)})
+                    z.object({
+                        $(for (key, value) in result join (,$['\r'])=> $key: $value)
+                    })
                 }
             }
             JoiDescribeType::Array { ref items } => {
+                if self.flags.single {
+                    pre_process = Some(quote! {
+                        (val) => {
+                            if (Array.isArray(val)) {
+                                return val;
+                            }
+                            return [val];
+                        }
+                    })
+                }
                 let mut children = items.iter().map(|child| child.to_tokens(false));
                 let element = if children.len() > 1 {
                     // not sure how common multiple array items is but i guess we wrap in union?
-                    quote! {
-                        z.union([$(for child in children join (, )=> $child)])
-                    }
+                    quote! { z.union([$(for child in children join (, )=> $child)]) }
                 } else {
                     children.next().unwrap()
                 };
@@ -236,15 +293,30 @@ impl Tokenizer for JoiDescribe {
             JoiDescribeType::NullableString { ref allow } => handle_string_allow(allow),
         };
 
-        let flag_tokens = self.flags.to_tokens(default_optional);
-
-        // only append '.' if flag_tokens exists
-        let schema = if flag_tokens.is_empty() {
-            value
-        } else {
-            quote! {
-                $value.$flag_tokens
+        let mut extra_flags: Vec<js::Tokens> = Vec::new();
+        for rule in self.rules.iter() {
+            match rule.name.as_str() {
+                "integer" => extra_flags.push(quote! {int()}),
+                "unique" => {
+                    refine = Some(quote! {
+                        (arr) => {
+                            return !arr || (new Set(arr)).size !== arr.length;
+                        }, {"Array most not have duplicate values"}
+                    })
+                }
+                _ => continue,
             }
+        }
+
+        let extra_flag_tokens = quote! {$(for elem in extra_flags join (.)=> $elem)};
+        let schema = join_tokens_with_dot(value, extra_flag_tokens);
+
+        let flag_tokens = self.flags.to_tokens(default_optional);
+        let schema = join_tokens_with_dot(schema, flag_tokens);
+
+        let schema = match refine {
+            Some(refine_fn) => quote! {$schema.refine($refine_fn)},
+            None => schema,
         };
 
         match pre_process {
@@ -296,7 +368,7 @@ mod tests {
 
         assert_eq!(
             tokens,
-            Ok("z.number().describe(\"some description\").optional()".to_string())
+            Ok("z.number().int().describe(\"some description\").optional()".to_string())
         )
     }
 
@@ -361,7 +433,17 @@ mod tests {
         let tokens = joi.convert();
         assert_eq!(
             tokens,
-            Ok("z.object({count: z.number(), dateCreated: z.date(), int: z.number().optional(), name: z.string().describe(\"Test Schema Name\").optional(), obj: z.object({}).optional(), propertyName1: z.boolean(), yuck: z.string().undefined()}).optional()".to_string())
+            Ok(r#"
+z.object({
+    count: z.number(),
+    dateCreated: z.date(),
+    int: z.number().optional(),
+    name: z.string().describe("Test Schema Name").optional(),
+    obj: z.object({}).optional(),
+    propertyName1: z.boolean(),
+    yuck: z.string().undefined(),
+}).optional();"#
+                .to_string())
         )
     }
 
@@ -396,6 +478,43 @@ mod tests {
         assert_eq!(
             tokens,
             Ok("z.array(z.string()).describe(\"A list of Test object\").optional()".to_string())
+        )
+    }
+
+    #[test]
+    fn test_basic_parse_array_unique() {
+        let joi: JoiDescribe = serde_json::from_str(
+            r#"{
+                "type": "array",
+                "flags": {
+                    "single": true
+                },
+                "rules": [
+                    {
+                        "name": "unique"
+                    }
+                ],
+                "items": [
+                    {
+                        "type": "string"
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let tokens = joi.convert();
+        assert_eq!(
+            tokens,
+            Ok(r#"z.preprocess((val) => {
+    if (Array.isArray(val)) {
+        return val;
+    }
+    return [val];
+}, z.array(z.string()).optional().refine((arr) => {
+    return !arr || (new Set(arr)).size !== arr.length;
+}, {"Array most not have duplicate values"}))"#
+                .to_string())
         )
     }
 
