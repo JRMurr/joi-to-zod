@@ -249,6 +249,9 @@ impl Tokenizer for JoiDescribe {
                 if self.flags.single {
                     pre_process = Some(quote! {
                         (val) => {
+                            if (val === undefined || val === null) {
+                                return val;
+                            }
                             if (Array.isArray(val)) {
                                 return val;
                             }
@@ -301,7 +304,7 @@ impl Tokenizer for JoiDescribe {
                     refine = Some(quote! {
                         (arr) => {
                             return !arr || (new Set(arr)).size !== arr.length;
-                        }, {"Array most not have duplicate values"}
+                        }, {message: "Array most not have duplicate values"}
                     })
                 }
                 _ => continue,
@@ -513,7 +516,7 @@ z.object({
     return [val];
 }, z.array(z.string()).optional().refine((arr) => {
     return !arr || (new Set(arr)).size !== arr.length;
-}, {"Array most not have duplicate values"}))"#
+}, {message: "Array most not have duplicate values"}))"#
                 .to_string())
         )
     }
