@@ -1,54 +1,15 @@
 use genco::prelude::js;
 use genco::prelude::*;
 use serde::{self, Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
+
+use crate::joi_types::JoiDescribeType;
 
 // https://github.com/hapijs/joi/blob/7ead57a9f8180895e110f010b425ae411451bd08/lib/index.d.ts#L1316
 // https://github.com/mrjono1/joi-to-typescript/blob/613e42022fb9847ab4c718410dbd980a457503ad/src/joiDescribeTypes.ts#LL10C56-L10C56
 
 pub trait Tokenizer {
     fn to_tokens(&self, default_presence: bool) -> js::Tokens;
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AltSchema {
-    schema: JoiDescribe,
-}
-
-/// The type specific joi describe options
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(tag = "type")]
-pub enum JoiDescribeType {
-    Object {
-        #[serde(default)]
-        keys: BTreeMap<String, JoiDescribe>,
-    },
-    Array {
-        #[serde(default)]
-        items: Vec<JoiDescribe>,
-    },
-    Alternatives {
-        #[serde(default)]
-        matches: Vec<AltSchema>,
-    },
-    Date,
-    Number {
-        #[serde(default)]
-        allow: Vec<serde_json::value::Number>,
-    },
-    String {
-        #[serde(default)]
-        allow: Vec<serde_json::value::Value>,
-    },
-    Boolean,
-    Any,
-    // Custom Variants
-    NullableString {
-        #[serde(default)]
-        allow: Vec<serde_json::value::Value>,
-    },
 }
 
 /// Representation of the `.describe()` response on a joi object
@@ -232,12 +193,11 @@ impl Tokenizer for JoiDescribe {
             }
         };
 
-        let value: js::Tokens = match self.type_options {
-            JoiDescribeType::Object {
-                keys: ref collection,
-            } => {
-                let result = collection
-                    .into_iter()
+        let value: js::Tokens = match &self.type_options {
+            JoiDescribeType::Object(object) => {
+                let result = object
+                    .keys
+                    .iter()
                     .map(|(key, value)| (key, value.to_tokens(true)));
                 quote! {
                     z.object({
@@ -245,7 +205,7 @@ impl Tokenizer for JoiDescribe {
                     })
                 }
             }
-            JoiDescribeType::Array { ref items } => {
+            JoiDescribeType::Array(arr) => {
                 if self.flags.single {
                     pre_process = Some(quote! {
                         (val) => {
@@ -259,7 +219,7 @@ impl Tokenizer for JoiDescribe {
                         }
                     })
                 }
-                let mut children = items.iter().map(|child| child.to_tokens(false));
+                let mut children = arr.items.iter().map(|child| child.to_tokens(false));
                 let element = if children.len() > 1 {
                     // not sure how common multiple array items is but i guess we wrap in union?
                     quote! { z.union([$(for child in children join (, )=> $child)]) }
@@ -268,18 +228,19 @@ impl Tokenizer for JoiDescribe {
                 };
                 quote! { z.array($element) }
             }
-            JoiDescribeType::Alternatives { ref matches } => quote! {
-                z.union([$(for one_match in matches.iter() join (, )=> $(one_match.schema.to_tokens(false)))])
+            JoiDescribeType::Alternatives(alt) => quote! {
+                z.union([$(for one_match in alt.matches.iter() join (, )=> $(one_match.schema.to_tokens(false)))])
             },
-            JoiDescribeType::String { ref allow } => {
+            JoiDescribeType::String(str) => {
                 if !self.flags.only {
                     quote! { z.string() }
                 } else {
-                    handle_string_allow(allow)
+                    handle_string_allow(&str.allow)
                 }
             }
-            JoiDescribeType::Date => quote! { z.date() },
-            JoiDescribeType::Number { ref allow } => {
+            JoiDescribeType::Date(_) => quote! { z.date() },
+            JoiDescribeType::Number(number) => {
+                let allow = &number.allow;
                 if !self.flags.only {
                     quote! { z.number() }
                 } else {
@@ -290,10 +251,13 @@ impl Tokenizer for JoiDescribe {
                     quote! { z.union([$(for elem in elems join (, )=> z.literal($elem))]) }
                 }
             }
-            JoiDescribeType::Boolean => quote! { z.boolean() },
+            JoiDescribeType::Boolean(_) => quote! { z.boolean() },
 
-            JoiDescribeType::Any => quote! { z.any() },
-            JoiDescribeType::NullableString { ref allow } => handle_string_allow(allow),
+            JoiDescribeType::Any(_) => quote! { z.any() },
+            JoiDescribeType::Unknown(unknown) => {
+                let ty = &unknown.joi_type;
+                quote! { z.$ty.__please_fix_me__() }
+            } // JoiDescribeType::NullableString { ref allow } => handle_string_allow(allow),
         };
 
         let mut extra_flags: Vec<js::Tokens> = Vec::new();

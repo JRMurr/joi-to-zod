@@ -1,5 +1,5 @@
 mod joi;
-
+mod joi_types;
 use thiserror::Error;
 
 use crate::joi::JoiDescribe;
