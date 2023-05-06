@@ -16,12 +16,18 @@ pub trait Tokenizer {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JoiDescribe {
+    /// The joi type specfic fields
     #[serde(flatten)]
     type_options: JoiDescribeType,
+    /// Flags on the schema
     #[serde(default)]
     flags: JoiFlag,
+    /// Modifiers on the schema
     #[serde(default)]
     rules: Vec<JoiRule>,
+    /// Conditional schema info
+    whens: Option<serde_json::Value>,
+    /// Labels,etc
     metas: Option<Vec<HashMap<String, String>>>,
 }
 
@@ -295,6 +301,11 @@ impl Tokenizer for JoiDescribe {
 
         let schema = match refine {
             Some(refine_fn) => quote! {$schema.refine($refine_fn)},
+            None => schema,
+        };
+
+        let schema = match self.whens {
+            Some(_) => quote! {$schema.TODO_handle_conditions()},
             None => schema,
         };
 

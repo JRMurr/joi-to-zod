@@ -53,3 +53,17 @@ export const StringWithValid = Joi.string().valid("foo", "bar");
 export const NumberWithValid = Joi.number().valid(3, 4);
 
 export const StringWithInValid = Joi.string().invalid("bar", "quz");
+
+export const ObjetWithWhen = Joi.object({
+  condVal: Joi.string().valid("foo", "bar").default("foo"),
+  username: Joi.string().when("condVal", {
+    not: "bar",
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
+  password: Joi.string().when("condVal", {
+    is: "bar",
+    then: Joi.required(),
+    otherwise: Joi.forbidden(),
+  }),
+});
