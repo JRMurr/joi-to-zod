@@ -38,7 +38,7 @@ pub struct JoiRule {
     /// The rule
     name: String,
     /// Optional args for the rule (like min or max value)
-    args: Option<serde_json::value::Value>,
+    args: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -145,7 +145,7 @@ impl Tokenizer for JoiDescribe {
         // TODO: maybe make this a list and make a super refine func?
         let mut refine: Option<js::Tokens> = None;
 
-        let mut handle_string_allow = |allow: &Vec<serde_json::value::Value>| -> js::Tokens {
+        let mut handle_string_allow = |allow: &Vec<serde_json::Value>| -> js::Tokens {
             let mut has_null = false;
             let mut empty_str = false;
             let mut non_empty = Vec::with_capacity(allow.len());
@@ -255,7 +255,7 @@ impl Tokenizer for JoiDescribe {
 
             JoiDescribeType::Any(_) => quote! { z.any() },
             JoiDescribeType::Unknown(unknown) => {
-                let ty = &unknown.joi_type;
+                let ty = &dbg!(unknown).joi_type;
                 quote! { z.$ty.__please_fix_me__() }
             } // JoiDescribeType::NullableString { ref allow } => handle_string_allow(allow),
         };

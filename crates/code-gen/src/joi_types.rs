@@ -55,7 +55,7 @@ pub struct JoiString {
     #[serde(rename = "type")]
     joi_type: MustBe!("string"),
     #[serde(default)]
-    pub allow: Vec<serde_json::value::Value>,
+    pub allow: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -84,6 +84,9 @@ pub struct JoiAny {
 pub struct JoiUnknown {
     #[serde(rename = "type")]
     pub joi_type: String,
+
+    #[serde(flatten)]
+    pub unknown_fields: BTreeMap<String, serde_json::Value>,
 }
 
 /// The type specific joi describe options
