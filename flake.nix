@@ -24,6 +24,7 @@
           default = pkgs.mkShell {
             buildInputs = with pkgs; [
               rustAttrs.rust-shell
+              cargo-nextest
               just
               napi-rs-cli
               nodejs-18_x
