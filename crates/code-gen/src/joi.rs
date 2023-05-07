@@ -332,7 +332,7 @@ impl Tokenizer for JoiDescribe {
                 "unique" => {
                     refine = Some(quote! {
                         (arr) => {
-                            return !arr || (new Set(arr)).size !== arr.length;
+                            return !arr || (new Set(arr)).size === arr.length;
                         }, {message: "Array most not have duplicate values"}
                     })
                 }
@@ -557,7 +557,7 @@ z.object({
     }
     return [val];
 }, z.array(z.string()).optional().refine((arr) => {
-    return !arr || (new Set(arr)).size !== arr.length;
+    return !arr || (new Set(arr)).size === arr.length;
 }, {message: "Array most not have duplicate values"}))"#
                 .to_string())
         )
