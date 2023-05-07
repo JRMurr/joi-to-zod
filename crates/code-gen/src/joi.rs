@@ -27,8 +27,9 @@ pub struct JoiDescribe {
     rules: Vec<JoiRule>,
     /// Conditional schema info
     whens: Option<serde_json::Value>,
-    /// Labels,etc
-    metas: Option<Vec<HashMap<String, String>>>,
+    /// extra meta info, not used in conversion yet
+    #[serde(default)]
+    metas: Vec<HashMap<String, serde_json::Value>>,
 }
 
 impl JoiDescribe {
@@ -52,6 +53,8 @@ pub struct JoiFlag {
     /// required | optional | forbidden
     presence: Option<String>,
     description: Option<String>,
+    label: Option<String>,
+
     /// Default value on parse error
     default: Option<serde_json::Value>,
     /// If should only allow values in the allow list
@@ -68,6 +71,7 @@ impl Default for JoiFlag {
             presence: None,
             description: None,
             default: None,
+            label: None,
             only: false,
             single: false,
         }
@@ -79,6 +83,12 @@ impl Tokenizer for JoiFlag {
         let description: Option<js::Tokens> = self.description.as_ref().map(|desc| {
             quote! {
                 describe($[str]($[const](desc)))
+            }
+        });
+
+        let label: Option<js::Tokens> = self.label.as_ref().map(|label| {
+            quote! {
+                openapi($[str]($[const](label)))
             }
         });
 
@@ -110,9 +120,6 @@ impl Tokenizer for JoiFlag {
             });
 
         let mut flag_tokens = Vec::new();
-        if let Some(desc) = description {
-            flag_tokens.push(desc);
-        }
 
         if let Some(def) = default {
             flag_tokens.push(def);
@@ -132,6 +139,14 @@ impl Tokenizer for JoiFlag {
                     optional()
                 });
             }
+        }
+
+        if let Some(desc) = description {
+            flag_tokens.push(desc);
+        }
+
+        if let Some(label) = label {
+            flag_tokens.push(label);
         }
 
         quote! {
@@ -349,7 +364,8 @@ mod tests {
         let describe = r#"{
             "type":"any",
             "flags":{
-                "description":"some description"
+                "description":"some description",
+                "label": "aLabel"
             }
         }"#;
 
@@ -358,7 +374,7 @@ mod tests {
 
         assert_eq!(
             tokens,
-            Ok("z.any().describe(\"some description\").optional()".to_string())
+            Ok("z.any().optional().describe(\"some description\").openapi(\"aLabel\")".to_string())
         )
     }
 
@@ -381,7 +397,7 @@ mod tests {
 
         assert_eq!(
             tokens,
-            Ok("z.number().int().describe(\"some description\").optional()".to_string())
+            Ok("z.number().int().optional().describe(\"some description\")".to_string())
         )
     }
 
@@ -451,7 +467,7 @@ z.object({
     count: z.number(),
     dateCreated: z.date(),
     int: z.number().int().optional(),
-    name: z.string().describe("Test Schema Name").optional(),
+    name: z.string().optional().describe("Test Schema Name"),
     obj: z.object({}).optional(),
     propertyName1: z.boolean(),
     yuck: z.string().undefined()
@@ -491,7 +507,7 @@ z.object({
         let tokens = joi.convert();
         assert_eq!(
             tokens,
-            Ok("z.array(z.string()).describe(\"A list of Test object\").optional()".to_string())
+            Ok("z.array(z.string()).optional().describe(\"A list of Test object\")".to_string())
         )
     }
 

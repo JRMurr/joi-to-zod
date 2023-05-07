@@ -27,6 +27,7 @@ export const TestListOfAltsSchema = Joi.array()
   .items(Joi.alt().try(Joi.bool(), Joi.string()))
   .required()
   .meta({ className: "TestList" })
+  .label("aLabel")
   .description("A list of Test object");
 
 export const AlternativesConditionalSchema = Joi.object({
