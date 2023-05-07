@@ -54,6 +54,8 @@ pub struct JoiFlag {
     presence: Option<String>,
     description: Option<String>,
     label: Option<String>,
+    /// "strip" | ?
+    result: Option<String>,
 
     /// Default value on parse error
     default: Option<serde_json::Value>,
@@ -72,6 +74,7 @@ impl Default for JoiFlag {
             description: None,
             default: None,
             label: None,
+            result: None,
             only: false,
             single: false,
         }
@@ -91,6 +94,11 @@ impl Tokenizer for JoiFlag {
                 openapi($[str]($[const](label)))
             }
         });
+
+        let strip_msg: Option<js::Tokens> = match self.result.as_ref().map(|r| r.as_str()) {
+            Some("strip") => Some(quote! {__please_handle_strip__()}),
+            _ => None,
+        };
 
         let default: Option<js::Tokens> = self.default.as_ref().map(|def| {
             let def = format!("{}", def);
@@ -147,6 +155,10 @@ impl Tokenizer for JoiFlag {
 
         if let Some(label) = label {
             flag_tokens.push(label);
+        }
+
+        if let Some(strip_msg) = strip_msg {
+            flag_tokens.push(strip_msg);
         }
 
         quote! {
@@ -751,6 +763,35 @@ z.object({
         assert_eq!(
             tokens,
             Ok("z.number().int().multiple.__please_fix_me__({\"base\":4}).somethingWeird.__please_fix_me__().optional()".to_string())
+        )
+    }
+
+    #[test]
+    fn test_convert_strip() {
+        let describe = r#"{
+            "type": "object",
+            "keys": {
+                "username": {
+                    "type": "string",
+                    "flags": {
+                        "result": "strip"
+                    }
+                },
+                "password": {
+                    "type": "string",
+                    "flags": {
+                        "presence": "required"
+                    }
+                }
+            }
+        }"#;
+
+        let joi: JoiDescribe = serde_json::from_str(describe).expect("should work...");
+        let tokens = joi.convert();
+
+        assert_eq!(
+            tokens,
+            Ok("z.object({\n    password: z.string(),\n    username: z.string().optional().__please_handle_strip__()\n}).optional()".to_string())
         )
     }
 }

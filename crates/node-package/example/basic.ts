@@ -35,17 +35,30 @@ import { ObjetWithWhen } from "./schemas";
 // );
 // console.log(toZod(ObjetWithWhen));
 
-const TestListOfAltsSchema = Joi.array()
-  .items(Joi.alt().try(Joi.bool(), Joi.string()))
-  .required()
-  .meta({ className: "TestList" })
-  .label("aLabel")
-  .description("A list of Test object");
+// const TestListOfAltsSchema = Joi.array()
+//   .items(Joi.alt().try(Joi.bool(), Joi.string()))
+//   .required()
+//   .meta({ className: "TestList" })
+//   .label("aLabel")
+//   .description("A list of Test object");
+// console.log(
+//   `basic.ts:41~~~~~~~~~~~~~~~~~~~${JSON.stringify(
+//     TestListOfAltsSchema.describe(),
+//     null,
+//     4
+//   )}~~~~~~~~~~~~~~~~~~~`
+// );
+// console.log(toZod(TestListOfAltsSchema));
+
+const TestObjWithStrip = Joi.object({
+  username: Joi.string().strip(),
+  password: Joi.string().required(),
+});
 console.log(
-  `basic.ts:41~~~~~~~~~~~~~~~~~~~${JSON.stringify(
-    TestListOfAltsSchema.describe(),
+  `basic.ts:57~~~~~~~~~~~~~~~~~~~${JSON.stringify(
+    TestObjWithStrip.describe(),
     null,
     4
   )}~~~~~~~~~~~~~~~~~~~`
 );
-console.log(toZod(TestListOfAltsSchema));
+console.log(toZod(TestObjWithStrip));
