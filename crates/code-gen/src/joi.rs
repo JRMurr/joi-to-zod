@@ -52,6 +52,8 @@ pub struct JoiFlag {
     /// required | optional | forbidden
     presence: Option<String>,
     description: Option<String>,
+    /// Default value on parse error
+    default: Option<serde_json::Value>,
     /// If should only allow values in the allow list
     #[serde(default)]
     only: bool, // default to false
@@ -65,6 +67,7 @@ impl Default for JoiFlag {
         Self {
             presence: None,
             description: None,
+            default: None,
             only: false,
             single: false,
         }
@@ -73,15 +76,18 @@ impl Default for JoiFlag {
 
 impl Tokenizer for JoiFlag {
     fn to_tokens(&self, default_optional: bool) -> js::Tokens {
-        let description: js::Tokens = self
-            .description
-            .as_ref()
-            .map(|desc| {
-                quote! {
-                    describe($[str]($[const](desc)))
-                }
-            })
-            .unwrap_or_default();
+        let description: Option<js::Tokens> = self.description.as_ref().map(|desc| {
+            quote! {
+                describe($[str]($[const](desc)))
+            }
+        });
+
+        let default: Option<js::Tokens> = self.default.as_ref().map(|def| {
+            let def = format!("{}", def);
+            quote! {
+                default($def)
+            }
+        });
 
         let presence = self
             .presence
@@ -103,25 +109,29 @@ impl Tokenizer for JoiFlag {
                 }
             });
 
-        // description
         let mut flag_tokens = Vec::new();
-        if !description.is_empty() {
-            flag_tokens.push(description);
+        if let Some(desc) = description {
+            flag_tokens.push(desc);
         }
 
-        // presence
-        // in joi - everything is optional at the root/in objects, in zod - everything is required
-        // so gotta add .optional() to everything that does not have a presence
-        // and ignore .required() presences
-
-        if &presence.to_string().unwrap_or_default() == "required()" {
-            // no op
-        } else if !presence.is_empty() {
-            flag_tokens.push(presence);
+        if let Some(def) = default {
+            flag_tokens.push(def);
         } else {
-            flag_tokens.push(quote! {
-                optional()
-            });
+            // only add presence if no default value
+
+            // in joi - everything is optional at the root/in objects, in zod - everything is required
+            // so gotta add .optional() to everything that does not have a presence
+            // and ignore .required() presences
+
+            if &presence.to_string().unwrap_or_default() == "required()" {
+                // no op
+            } else if !presence.is_empty() {
+                flag_tokens.push(presence);
+            } else {
+                flag_tokens.push(quote! {
+                    optional()
+                });
+            }
         }
 
         quote! {
@@ -261,7 +271,7 @@ impl Tokenizer for JoiDescribe {
 
             JoiDescribeType::Any(_) => quote! { z.any() },
             JoiDescribeType::Unknown(joi_unknown) => {
-                let ty = &dbg!(joi_unknown).joi_type;
+                let ty = &joi_unknown.joi_type;
                 match ty.as_str() {
                     "nullableString" => {
                         // TODO: handle this gracefully but for now assuming the structure is like a string
@@ -280,8 +290,18 @@ impl Tokenizer for JoiDescribe {
 
         let mut extra_flags: Vec<js::Tokens> = Vec::new();
         for rule in self.rules.iter() {
-            match rule.name.as_str() {
+            let name = rule.name.as_str();
+            let args = rule.args.as_ref();
+            match name {
                 "integer" => extra_flags.push(quote! {int()}),
+                "min" | "max" => {
+                    let val = args
+                        .unwrap()
+                        .pointer("/limit")
+                        .expect("min|max should have limit");
+                    let val = format!("{}", val);
+                    extra_flags.push(quote! {$name($val)});
+                }
                 "unique" => {
                     refine = Some(quote! {
                         (arr) => {
@@ -289,7 +309,10 @@ impl Tokenizer for JoiDescribe {
                         }, {message: "Array most not have duplicate values"}
                     })
                 }
-                _ => continue,
+                _ => {
+                    let args = args.map(|a| format!("{}", a)).unwrap_or_default();
+                    extra_flags.push(quote! {$name.__please_fix_me__($args)});
+                }
             }
         }
 
@@ -427,12 +450,13 @@ mod tests {
 z.object({
     count: z.number(),
     dateCreated: z.date(),
-    int: z.number().optional(),
+    int: z.number().int().optional(),
     name: z.string().describe("Test Schema Name").optional(),
     obj: z.object({}).optional(),
     propertyName1: z.boolean(),
-    yuck: z.string().undefined(),
-}).optional();"#
+    yuck: z.string().undefined()
+}).optional()"#
+                .trim()
                 .to_string())
         )
     }
@@ -497,6 +521,9 @@ z.object({
         assert_eq!(
             tokens,
             Ok(r#"z.preprocess((val) => {
+    if (val === undefined || val === null) {
+        return val;
+    }
     if (Array.isArray(val)) {
         return val;
     }
@@ -623,6 +650,91 @@ z.object({
         assert_eq!(
             tokens,
             Ok("z.someThingUnknown.__please_fix_me__().optional()".to_string())
+        )
+    }
+
+    #[test]
+    fn test_convert_string_with_default() {
+        let joi: JoiDescribe = serde_json::from_str(
+            r#"
+            {
+                "type": "string",
+                "flags": {
+                    "default": "aStr"
+                }
+            }
+        "#,
+        )
+        .unwrap();
+
+        let tokens = joi.convert();
+        assert_eq!(tokens, Ok("z.string().default(\"aStr\")".to_string()))
+    }
+
+    #[test]
+    fn test_convert_number_with_min_max() {
+        let joi: JoiDescribe = serde_json::from_str(
+            r#"
+            {
+                "type": "number",
+                "rules": [
+                    {
+                        "name": "integer"
+                    },
+                    {
+                        "name": "min",
+                        "args": {
+                            "limit": 10
+                        }
+                    },
+                    {
+                        "name": "max",
+                        "args": {
+                            "limit": 200
+                        }
+                    }
+                ]
+            }
+        "#,
+        )
+        .unwrap();
+
+        let tokens = joi.convert();
+        assert_eq!(
+            tokens,
+            Ok("z.number().int().min(10).max(200).optional()".to_string())
+        )
+    }
+
+    #[test]
+    fn test_unknown_rules() {
+        let joi: JoiDescribe = serde_json::from_str(
+            r#"
+            {
+                "type": "number",
+                "rules": [
+                    {
+                        "name": "integer"
+                    },
+                    {
+                        "name": "multiple",
+                        "args": {
+                            "base": 4
+                        }
+                    },
+                    {
+                        "name": "somethingWeird"
+                    }
+                ]
+            }
+        "#,
+        )
+        .unwrap();
+
+        let tokens = joi.convert();
+        assert_eq!(
+            tokens,
+            Ok("z.number().int().multiple.__please_fix_me__({\"base\":4}).somethingWeird.__please_fix_me__().optional()".to_string())
         )
     }
 }

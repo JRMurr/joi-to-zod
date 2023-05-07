@@ -6,27 +6,31 @@ import { ObjetWithWhen } from "./schemas";
 
 // console.log(toZod(NumberWithValid)); // prints z.union([z.literal(3), z.literal(4)])
 
-// const IntSchema = Joi.number().integer().multiple(4);
-// const StringMin = Joi.string().min(1);
-
-// // console.log(toZod(IntSchema));
-
-// const ArrSchema = Joi.array().items(Joi.string());
-
-// console.log("basic.ts:15: ArrSchema");
-// console.dir(ArrSchema.validate([undefined]), {
-//   depth: null,
-//   showHidden: false,
-//   colors: true,
-// });
-
-// console.log(toZod(ArrSchema));
-
+const IntSchema = Joi.number().integer().min(10).max(200).multiple(4);
 console.log(
-  `basic.ts:25~~~~~~~~~~~~~~~~~~~${JSON.stringify(
-    ObjetWithWhen.describe(),
+  `basic.ts:11~~~~~~~~~~~~~~~~~~~${JSON.stringify(
+    IntSchema.describe(),
     null,
     4
   )}~~~~~~~~~~~~~~~~~~~`
 );
-console.log(toZod(ObjetWithWhen));
+console.log(toZod(IntSchema));
+
+// const StringMin = Joi.string().min(1).default("aStr");
+// console.log(
+//   `basic.ts:11~~~~~~~~~~~~~~~~~~~${JSON.stringify(
+//     StringMin.describe(),
+//     null,
+//     4
+//   )}~~~~~~~~~~~~~~~~~~~`
+// );
+// console.log(toZod(StringMin));
+
+// console.log(
+//   `basic.ts:25~~~~~~~~~~~~~~~~~~~${JSON.stringify(
+//     ObjetWithWhen.describe(),
+//     null,
+//     4
+//   )}~~~~~~~~~~~~~~~~~~~`
+// );
+// console.log(toZod(ObjetWithWhen));

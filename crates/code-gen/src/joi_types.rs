@@ -102,9 +102,5 @@ pub enum JoiDescribeType {
     String(JoiString),
     Boolean(JoiBoolean),
     Any(JoiAny),
-    Unknown(JoiUnknown), // // Custom Variants
-                         // NullableString {
-                         //     #[serde(default)]
-                         //     allow: Vec<serde_json::value::Value>,
-                         // },
+    Unknown(JoiUnknown),
 }
